@@ -1,0 +1,142 @@
+import torch
+import torchaudio
+import os
+import sys
+import glob
+from pathlib import Path
+import soundfile as sf
+
+# 允许在 test 目录直接运行脚本时导入项目根目录模块
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from model import LightweightCNN
+
+def load_model(model_path, device='cuda'):
+    """加载pth模型文件"""
+    # 创建模型实例
+    model = LightweightCNN(num_classes=2)
+    
+    # 加载权重
+    checkpoint = torch.load(model_path, map_location=device)
+    
+    # 处理不同的保存格式
+    if 'model_state_dict' in checkpoint:
+        # 如果保存的是完整checkpoint
+        model.load_state_dict(checkpoint['model_state_dict'])
+        epoch = checkpoint.get('epoch', 'unknown')
+        val_acc = checkpoint.get('val_acc', 'unknown')
+        print(f"加载checkpoint: epoch {epoch}, 验证准确率 {val_acc}%")
+    else:
+        # 如果直接保存的是state_dict
+        model.load_state_dict(checkpoint)
+        print("加载模型权重")
+    
+    model.to(device)
+    model.eval()
+    return model
+
+def preprocess_audio(audio_path, sample_rate=16000, duration=2):
+    """预处理音频文件"""
+    target_len = duration * sample_rate
+    
+    try:
+        # 加载音频
+        audio, sr = sf.read(audio_path)
+        waveform = torch.from_numpy(audio).float()
+        
+        # 转单声道
+        if len(waveform.shape) > 1:
+            waveform = waveform.mean(dim=1)
+        waveform = waveform.unsqueeze(0)
+        
+        # 重采样
+        if sr != sample_rate:
+            waveform = torchaudio.functional.resample(
+                waveform, sr, sample_rate
+            )
+        
+        # 固定长度
+        if waveform.shape[1] > target_len:
+            waveform = waveform[:, :target_len]
+        elif waveform.shape[1] < target_len:
+            padding = target_len - waveform.shape[1]
+            waveform = torch.nn.functional.pad(waveform, (0, padding))
+        
+        # 提取梅尔频谱
+        mel_spectrogram = torchaudio.transforms.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_mels=64,
+            n_fft=1024,
+            hop_length=512,
+        )
+        mel = mel_spectrogram(waveform)
+        mel = torchaudio.transforms.AmplitudeToDB()(mel)
+        
+        # 归一化
+        if mel.std() > 0:
+            mel = (mel - mel.mean()) / (mel.std() + 1e-8)
+        
+        return mel.unsqueeze(0)  # 添加batch维度
+        
+    except Exception as e:
+        print(f"音频处理失败: {e}")
+        return None
+
+def predict(model, audio_path, device='cuda'):
+    """预测单个音频文件"""
+    # 预处理音频
+    mel = preprocess_audio(audio_path)
+    if mel is None:
+        return None, None
+    
+    mel = mel.to(device)
+    
+    # 推理
+    with torch.no_grad():
+        outputs = model(mel)
+        probs = torch.softmax(outputs, dim=1)
+        pred = torch.argmax(outputs, dim=1)
+    
+    result = "AI合成" if pred.item() == 1 else "真人"
+    confidence = probs[0][pred.item()].item()
+    
+    return result, confidence
+
+def predict_batch(model, audio_paths, device='cuda'):
+    """批量预测多个音频文件"""
+    results = []
+    
+    for audio_path in audio_paths:
+        result, confidence = predict(model, audio_path, device)
+        if result:
+            results.append({
+                'file': audio_path,
+                'result': result,
+                'confidence': confidence
+            })
+            print(f"{audio_path}: {result} (置信度: {confidence:.2%})")
+    
+    return results
+
+if __name__ == "__main__":
+    # 配置
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model_path = str(PROJECT_ROOT / 'model' / 'best_model_merged.pth')  # 你的pth文件路径
+    
+    print(f"加载模型: {model_path}")
+    model = load_model(model_path, device)
+    
+    # 默认测试整个文件夹
+    test_folder = str(PROJECT_ROOT / "data" / "test_data")
+    audio_files = glob.glob(os.path.join(test_folder, "**", "*.wav"), recursive=True)
+
+    if not audio_files:
+        print(f"未找到可测试的音频文件: {test_folder}")
+    else:
+        print(f"\n开始批量预测，共 {len(audio_files)} 个文件...")
+        results = predict_batch(model, audio_files, device)
+        real_cnt = sum(1 for item in results if item['result'] == '真人')
+        fake_cnt = sum(1 for item in results if item['result'] == 'AI合成')
+        print(f"\n汇总: 真人 {real_cnt}，AI合成 {fake_cnt}")
