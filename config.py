@@ -11,10 +11,11 @@ class Config:
     n_mels = 64   # 64个梅尔频带
     
     # 训练参数
-    batch_size = 256  # 充分利用GPU
-    num_workers = 8   # 多线程加载
-    epochs = 20
-    learning_rate = 1e-3
+    batch_size = 38   # 在当前基础上再上调约 5%
+    val_batch_size = 76
+    num_workers = 3   # 适度提高数据加载并行度
+    epochs = 4
+    learning_rate = 1.15e-3
     
     # 数据划分
     val_split = 0.1
@@ -26,8 +27,13 @@ class Config:
     use_amp = True
     
     # 梯度累积
-    gradient_accumulation = 2
+    gradient_accumulation = 4
     
     # 模型保存
     save_checkpoint = True
     checkpoint_interval = 2
+
+    # 续训设置
+    # 优先从 model 目录中的已导出权重继续训练
+    resume = True
+    resume_model_path = os.path.join(current_dir, "model", "best_model_merged.pth")

@@ -19,8 +19,54 @@ from config import Config
 from dataset import SpeechDataset
 from model import LightweightCNN
 
+CONFIDENCE_THRESHOLD = 0.8
+
+
+def load_resume_checkpoint(model, optimizer, resume_path, device):
+    """加载续训权重，并返回起始epoch与历史最佳精度。"""
+    if not resume_path or not os.path.isfile(resume_path):
+        print("未找到续训权重，使用随机初始化开始训练")
+        return 0, 0.0
+
+    print(f"加载续训权重: {resume_path}")
+    checkpoint = torch.load(resume_path, map_location=device)
+
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+    elif isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        state_dict = checkpoint["state_dict"]
+    else:
+        state_dict = checkpoint
+
+    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+    if missing_keys:
+        print(f"警告: 缺失参数数量 {len(missing_keys)}")
+    if unexpected_keys:
+        print(f"警告: 多余参数数量 {len(unexpected_keys)}")
+
+    # 只有当优化器状态结构兼容时才恢复
+    if isinstance(checkpoint, dict) and "optimizer_state_dict" in checkpoint:
+        try:
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            print("已恢复优化器状态")
+        except Exception:
+            print("优化器状态不兼容，已跳过恢复，将使用新的优化器状态")
+
+    start_epoch = 0
+    best_val_acc = 0.0
+    if isinstance(checkpoint, dict):
+        # epoch 按保存值 +1 继续
+        start_epoch = int(checkpoint.get("epoch", -1)) + 1
+        best_val_acc = float(checkpoint.get("val_acc", 0.0))
+
+    print(f"续训起始epoch: {start_epoch + 1}")
+    print(f"历史最佳验证准确率: {best_val_acc:.2f}%")
+    return start_epoch, best_val_acc
+
 def train():
     config = Config()
+    if torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
     
     # 检查GPU
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -44,24 +90,28 @@ def train():
         val_split=config.val_split
     )
     
-    # 创建DataLoader
+    # 创建DataLoader（按内存情况动态设置参数）
+    loader_kwargs = {
+        'num_workers': config.num_workers,
+        'pin_memory': True,
+    }
+    if config.num_workers > 0:
+        loader_kwargs['prefetch_factor'] = 2
+        loader_kwargs['persistent_workers'] = True
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=config.batch_size,
         shuffle=True,
-        num_workers=config.num_workers,
-        pin_memory=True,
-        prefetch_factor=2,
-        persistent_workers=True if config.num_workers > 0 else False
+        **loader_kwargs,
     )
-    
+
+    val_batch_size = getattr(config, 'val_batch_size', config.batch_size)
     val_loader = DataLoader(
         val_dataset,
-        batch_size=config.batch_size,
+        batch_size=val_batch_size,
         shuffle=False,
-        num_workers=config.num_workers,
-        pin_memory=True,
-        persistent_workers=True if config.num_workers > 0 else False
+        **loader_kwargs,
     )
     
     print(f"\n训练集大小: {len(train_dataset):,} 条")
@@ -82,13 +132,29 @@ def train():
         lr=config.learning_rate, 
         weight_decay=1e-5
     )
+
+    # 可选：从 model 目录权重继续训练
+    start_epoch = 0
+    best_val_acc = 0.0
+    if getattr(config, 'resume', False):
+        start_epoch, best_val_acc = load_resume_checkpoint(
+            model,
+            optimizer,
+            getattr(config, 'resume_model_path', ''),
+            device
+        )
     
-    # 学习率调度器
+    remaining_epochs = max(config.epochs - start_epoch, 1)
+    if start_epoch >= config.epochs:
+        print(f"当前配置 epochs={config.epochs}，而续训起点已到第 {start_epoch + 1} 轮，无需继续训练。")
+        return
+
+    # 学习率调度器（按剩余轮次构建，避免续训时步数不匹配）
     scheduler = optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=config.learning_rate,
         steps_per_epoch=len(train_loader),
-        epochs=config.epochs,
+        epochs=remaining_epochs,
         pct_start=0.3
     )
     
@@ -105,7 +171,6 @@ def train():
         print(f"启用梯度累积: {accumulation_steps} 步")
     
     # 训练记录
-    best_val_acc = 0.0
     train_losses = []
     val_accs = []
     start_time = time.time()
@@ -114,7 +179,7 @@ def train():
     print(f"预计每个epoch时间: {len(train_loader) * config.batch_size / 1000:.1f} 秒")
     print(f"{'='*60}\n")
     
-    for epoch in range(config.epochs):
+    for epoch in range(start_epoch, config.epochs):
         epoch_start = time.time()
         
         # 训练阶段
@@ -252,8 +317,13 @@ def test_model(model_path, audio_path):
         probs = torch.softmax(outputs, dim=1)
         pred = torch.argmax(outputs, dim=1)
     
-    result = "AI合成" if pred.item() == 1 else "真人"
-    confidence = probs[0][pred.item()].item()
+    pred_idx = int(pred.item())
+    confidence = probs[0][pred_idx].item()
+    result = "AI合成" if pred_idx == 1 else "真人"
+
+    # 低置信度样本统一判为 AI 合成
+    if confidence < CONFIDENCE_THRESHOLD:
+        result = "AI合成"
     
     print(f"\n音频: {audio_path}")
     print(f"预测结果: {result} (置信度: {confidence:.2%})")

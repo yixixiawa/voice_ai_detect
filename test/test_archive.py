@@ -13,6 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from model import LightweightCNN
 
+CONFIDENCE_THRESHOLD = 0.8
+
 def load_model(model_path, device='cuda'):
     """加载pth模型文件"""
     # 创建模型实例
@@ -99,8 +101,13 @@ def predict(model, audio_path, device='cuda'):
         probs = torch.softmax(outputs, dim=1)
         pred = torch.argmax(outputs, dim=1)
     
-    result = "AI合成" if pred.item() == 1 else "真人"
-    confidence = probs[0][pred.item()].item()
+    pred_idx = int(pred.item())
+    confidence = probs[0][pred_idx].item()
+    result = "AI合成" if pred_idx == 1 else "真人"
+
+    # 低置信度时按 AI 合成处理，避免将不确定样本判为真人
+    if confidence < CONFIDENCE_THRESHOLD:
+        result = "AI合成"
     
     return result, confidence
 
