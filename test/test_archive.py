@@ -2,7 +2,6 @@ import torch
 import torchaudio
 import os
 import sys
-import glob
 from pathlib import Path
 import soundfile as sf
 
@@ -14,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from model import LightweightCNN
 
 CONFIDENCE_THRESHOLD = 0.8
+SUPPORTED_AUDIO_EXTENSIONS = {'.wav', '.mp3', '.flac', '.m4a', '.ogg', '.aac', '.wma'}
 
 def load_model(model_path, device='cuda'):
     """加载pth模型文件"""
@@ -22,7 +22,6 @@ def load_model(model_path, device='cuda'):
     
     # 加载权重
     checkpoint = torch.load(model_path, map_location=device)
-    
     # 处理不同的保存格式
     if 'model_state_dict' in checkpoint:
         # 如果保存的是完整checkpoint
@@ -39,19 +38,33 @@ def load_model(model_path, device='cuda'):
     model.eval()
     return model
 
+def _load_audio(audio_path):
+    """优先使用 torchaudio 读取，失败后回退到 soundfile。"""
+    try:
+        waveform, sr = torchaudio.load(audio_path)
+        return waveform.float(), sr
+    except Exception:
+        audio, sr = sf.read(audio_path)
+        waveform = torch.from_numpy(audio).float()
+        if waveform.ndim == 1:
+            waveform = waveform.unsqueeze(0)
+        elif waveform.ndim == 2:
+            waveform = waveform.transpose(0, 1)
+        return waveform, sr
+
 def preprocess_audio(audio_path, sample_rate=16000, duration=2):
     """预处理音频文件"""
     target_len = duration * sample_rate
     
     try:
         # 加载音频
-        audio, sr = sf.read(audio_path)
-        waveform = torch.from_numpy(audio).float()
+        waveform, sr = _load_audio(audio_path)
         
         # 转单声道
-        if len(waveform.shape) > 1:
-            waveform = waveform.mean(dim=1)
-        waveform = waveform.unsqueeze(0)
+        if waveform.ndim > 1 and waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+        elif waveform.ndim == 1:
+            waveform = waveform.unsqueeze(0)
         
         # 重采样
         if sr != sample_rate:
@@ -85,6 +98,14 @@ def preprocess_audio(audio_path, sample_rate=16000, duration=2):
     except Exception as e:
         print(f"音频处理失败: {e}")
         return None
+
+def collect_audio_files(test_folder):
+    """递归收集支持的音频文件。"""
+    folder = Path(test_folder)
+    return [
+        str(p) for p in folder.rglob('*')
+        if p.is_file() and p.suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS
+    ]
 
 def predict(model, audio_path, device='cuda'):
     """预测单个音频文件"""
@@ -137,10 +158,12 @@ if __name__ == "__main__":
     
     # 默认测试整个文件夹
     test_folder = str(PROJECT_ROOT / "data" / "test_data")
-    audio_files = glob.glob(os.path.join(test_folder, "**", "*.wav"), recursive=True)
+    audio_files = collect_audio_files(test_folder)
 
     if not audio_files:
+        exts = ', '.join(sorted(SUPPORTED_AUDIO_EXTENSIONS))
         print(f"未找到可测试的音频文件: {test_folder}")
+        print(f"支持的格式: {exts}")
     else:
         print(f"\n开始批量预测，共 {len(audio_files)} 个文件...")
         results = predict_batch(model, audio_files, device)

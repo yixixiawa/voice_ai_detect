@@ -21,7 +21,6 @@ from model import LightweightCNN
 
 CONFIDENCE_THRESHOLD = 0.8
 
-
 def load_resume_checkpoint(model, optimizer, resume_path, device):
     """加载续训权重，并返回起始epoch与历史最佳精度。"""
     if not resume_path or not os.path.isfile(resume_path):
