@@ -7,7 +7,7 @@ print("数据诊断工具")
 print("=" * 60)
 
 # 1. 检查当前目录
-current_dir = os.getcwd()
+current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 print(f"\n1. 当前工作目录: {current_dir}")
 
 # 2. 检查data文件夹
@@ -126,7 +126,7 @@ if not real_audio_files and not fake_audio_files:
     print("  2. 音频文件格式不支持（支持的格式: .wav, .mp3, .flac, .m4a, .ogg）")
     print("  3. 文件夹权限问题")
     print("\n建议解决方案:")
-    print("  1. 确认当前在正确的项目目录: cd D:\\workspace\\python")
+    print("  1. 确认当前在项目根目录再运行脚本")
     print("  2. 检查data文件夹确实包含real和fake子文件夹")
     print("  3. 确认音频文件确实在这些子文件夹中")
 elif not real_audio_files:

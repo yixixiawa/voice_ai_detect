@@ -236,7 +236,12 @@ def start_training_process() -> dict[str, Any]:
         )
 
     pid_file.write_text(str(process.pid), encoding="utf-8")
-    return {"started": True, "message": "训练任务已启动", "pid": process.pid, "log": str(log_file)}
+    return {
+        "started": True,
+        "message": "训练任务已启动",
+        "pid": process.pid,
+        "log": _to_project_relative(log_file),
+    }
 
 
 def _train_pid_file() -> Path:
@@ -245,6 +250,13 @@ def _train_pid_file() -> Path:
 
 def _train_log_file() -> Path:
     return Path(__file__).resolve().parents[1] / "train.log"
+
+
+def _to_project_relative(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT)).replace("\\", "/")
+    except ValueError:
+        return str(path)
 
 
 def _is_pid_running(pid: int) -> bool:
@@ -261,13 +273,14 @@ def _is_pid_running(pid: int) -> bool:
 def get_training_status() -> dict[str, Any]:
     pid_file = _train_pid_file()
     log_file = _train_log_file()
+    rel_log = _to_project_relative(log_file)
 
     if not pid_file.exists():
         return {
             "running": False,
             "pid": None,
             "message": "当前无训练任务",
-            "log": str(log_file),
+            "log": rel_log,
         }
 
     try:
@@ -278,7 +291,7 @@ def get_training_status() -> dict[str, Any]:
             "running": False,
             "pid": None,
             "message": "PID 文件损坏，已清理",
-            "log": str(log_file),
+            "log": rel_log,
         }
 
     if _is_pid_running(pid):
@@ -286,7 +299,7 @@ def get_training_status() -> dict[str, Any]:
             "running": True,
             "pid": pid,
             "message": "训练任务运行中",
-            "log": str(log_file),
+            "log": rel_log,
         }
 
     pid_file.unlink(missing_ok=True)
@@ -294,7 +307,7 @@ def get_training_status() -> dict[str, Any]:
         "running": False,
         "pid": pid,
         "message": "训练任务已结束",
-        "log": str(log_file),
+        "log": rel_log,
     }
 
 
@@ -368,11 +381,12 @@ def _tail_lines(file_path: Path, n: int) -> list[str]:
 def get_training_log_tail(lines: int = 100) -> dict[str, Any]:
     safe_lines = max(1, min(lines, 2000))
     log_file = _train_log_file()
+    rel_log = _to_project_relative(log_file)
 
     if not log_file.exists():
         return {
             "exists": False,
-            "log": str(log_file),
+            "log": rel_log,
             "lines": safe_lines,
             "content": [],
             "message": "训练日志文件不存在",
@@ -381,7 +395,7 @@ def get_training_log_tail(lines: int = 100) -> dict[str, Any]:
     content = _tail_lines(log_file, safe_lines)
     return {
         "exists": True,
-        "log": str(log_file),
+        "log": rel_log,
         "lines": safe_lines,
         "content": content,
         "message": "ok",

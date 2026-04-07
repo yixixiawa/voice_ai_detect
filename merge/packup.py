@@ -1,4 +1,3 @@
-import os
 import shutil
 from pathlib import Path
 import math
@@ -59,5 +58,6 @@ def group_files_by_count(target_dir, files_per_folder=500):
     print(f"\n完成！文件已分组到 {num_folders} 个文件夹中")
 
 if __name__ == "__main__":
-    real_dir = r"D:\workspace\python\data\test"
+    project_root = Path(__file__).resolve().parents[1]
+    real_dir = project_root / "data" / "test"
     group_files_by_count(real_dir, files_per_folder=500)

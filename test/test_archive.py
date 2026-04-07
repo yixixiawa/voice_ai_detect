@@ -135,18 +135,53 @@ def predict(model, audio_path, device='cuda'):
 def predict_batch(model, audio_paths, device='cuda'):
     """批量预测多个音频文件"""
     results = []
+    interrupted = False
     
-    for audio_path in audio_paths:
-        result, confidence = predict(model, audio_path, device)
-        if result:
-            results.append({
-                'file': audio_path,
-                'result': result,
-                'confidence': confidence
-            })
-            print(f"{audio_path}: {result} (置信度: {confidence:.2%})")
+    for idx, audio_path in enumerate(audio_paths, start=1):
+        try:
+            result, confidence = predict(model, audio_path, device)
+            if result:
+                results.append({
+                    'file': audio_path,
+                    'result': result,
+                    'confidence': confidence
+                })
+                print(f"{audio_path}: {result} (置信度: {confidence:.2%})")
+        except KeyboardInterrupt:
+            interrupted = True
+            print(f"\n检测被用户中断，已处理 {idx - 1}/{len(audio_paths)} 个文件。")
+            break
     
-    return results
+    return results, interrupted
+
+
+def print_summary(results, total_files, interrupted=False):
+    """输出汇总和基于当前结果的结论。"""
+    processed = len(results)
+    real_cnt = sum(1 for item in results if item['result'] == '真人')
+    fake_cnt = sum(1 for item in results if item['result'] == 'AI合成')
+
+    if interrupted:
+        print("\n[中断汇总] 基于已处理样本给出当前结论：")
+    else:
+        print("\n[完整汇总]")
+
+    print(f"已处理: {processed}/{total_files}")
+    print(f"真人: {real_cnt}，AI合成: {fake_cnt}")
+
+    if processed == 0:
+        print("结论: 暂无有效结果（未成功处理任何文件）。")
+        return
+
+    fake_ratio = fake_cnt / processed
+    real_ratio = real_cnt / processed
+
+    if fake_cnt > real_cnt:
+        print(f"结论: 当前样本以 AI合成 为主（占比 {fake_ratio:.2%}）。")
+    elif real_cnt > fake_cnt:
+        print(f"结论: 当前样本以 真人 为主（占比 {real_ratio:.2%}）。")
+    else:
+        print("结论: 当前样本中 真人 与 AI合成 数量持平。")
 
 if __name__ == "__main__":
     # 配置
@@ -166,7 +201,5 @@ if __name__ == "__main__":
         print(f"支持的格式: {exts}")
     else:
         print(f"\n开始批量预测，共 {len(audio_files)} 个文件...")
-        results = predict_batch(model, audio_files, device)
-        real_cnt = sum(1 for item in results if item['result'] == '真人')
-        fake_cnt = sum(1 for item in results if item['result'] == 'AI合成')
-        print(f"\n汇总: 真人 {real_cnt}，AI合成 {fake_cnt}")
+        results, interrupted = predict_batch(model, audio_files, device)
+        print_summary(results, len(audio_files), interrupted)

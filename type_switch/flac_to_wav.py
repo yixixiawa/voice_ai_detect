@@ -1,4 +1,3 @@
-import os
 import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -52,8 +51,8 @@ def batch_convert_cnceleb2(input_root, output_root, max_workers=4, overwrite=Fal
     批量转换 CN-Celeb2 数据集
     
     Args:
-        input_root: 输入根目录 (例如: D:/workspace/python/data/CN-Celeb2_flac/data)
-        output_root: 输出根目录 (例如: D:/workspace/python/data/CN-Celeb2_wav/data)
+        input_root: 输入根目录 (例如: data/CN-Celeb2_flac/data)
+        output_root: 输出根目录 (例如: data/CN-Celeb2_wav/data)
         max_workers: 并行线程数
         overwrite: 是否覆盖已存在的文件
     """
@@ -127,9 +126,10 @@ def convert_single_speaker(speaker_folder, output_root, overwrite=False):
 # ============= 使用示例 =============
 
 if __name__ == "__main__":
-    # 设置路径（使用原始字符串或正斜杠）
-    INPUT_ROOT = r"D:\workspace\python\data\CN-Celeb2_flac\data"
-    OUTPUT_ROOT = r"D:\workspace\python\data/dt"
+    # 设置路径（基于项目根目录，避免硬编码绝对路径）
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    INPUT_ROOT = PROJECT_ROOT / "data" / "CN-Celeb2_flac" / "data"
+    OUTPUT_ROOT = PROJECT_ROOT / "data" / "dt"
     
     # 方式1：批量转换所有说话人
     batch_convert_cnceleb2(
@@ -141,7 +141,7 @@ if __name__ == "__main__":
     
     # 方式2：只转换单个说话人（测试用）
     # convert_single_speaker(
-    #     speaker_folder=r"D:\workspace\python\data\CN-Celeb2_flac\data\id11446",
-    #     output_root=r"D:\workspace\python\data\CN-Celeb2_wav\data",
+    #     speaker_folder=PROJECT_ROOT / "data" / "CN-Celeb2_flac" / "data" / "id11446",
+    #     output_root=PROJECT_ROOT / "data" / "CN-Celeb2_wav" / "data",
     #     overwrite=False
     # )

@@ -7,7 +7,7 @@
 在项目根目录执行：
 
 ```powershell
-d:/workspace/python/venv/Scripts/python.exe d:/workspace/python/backend/manage.py runserver 0.0.0.0:8000
+python backend/manage.py runserver 0.0.0.0:8000
 ```
 
 默认服务地址：`http://127.0.0.1:8000`
@@ -82,7 +82,7 @@ d:/workspace/python/venv/Scripts/python.exe d:/workspace/python/backend/manage.p
   "started": true,
   "message": "训练任务已启动",
   "pid": 12345,
-  "log": "D:\\workspace\\python\\backend\\train.log"
+  "log": "backend/train.log"
 }
 ```
 
@@ -110,7 +110,7 @@ d:/workspace/python/venv/Scripts/python.exe d:/workspace/python/backend/manage.p
   "running": true,
   "pid": 12345,
   "message": "训练任务运行中",
-  "log": "D:\\workspace\\python\\backend\\train.log"
+  "log": "backend/train.log"
 }
 ```
 
@@ -128,7 +128,7 @@ d:/workspace/python/venv/Scripts/python.exe d:/workspace/python/backend/manage.p
   "pid": 12345,
   "message": "训练任务已停止",
   "detail": "SUCCESS: The process with PID 12345 has been terminated.",
-  "log": "D:\\workspace\\python\\backend\\train.log"
+  "log": "backend/train.log"
 }
 ```
 
@@ -151,7 +151,7 @@ GET /api/train/log/?n=200
 {
   "ok": true,
   "exists": true,
-  "log": "D:\\workspace\\python\\backend\\train.log",
+  "log": "backend/train.log",
   "lines": 200,
   "content": [
     "Epoch 2/10 [训练]: ...",
